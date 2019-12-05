@@ -56,6 +56,7 @@ import software.amazon.smithy.model.shapes.TimestampShape;
 import software.amazon.smithy.model.shapes.ToShapeId;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.traits.EnumTrait;
+import software.amazon.smithy.model.traits.EventStreamTrait;
 import software.amazon.smithy.model.traits.StreamingTrait;
 import software.amazon.smithy.utils.StringUtils;
 
@@ -305,6 +306,10 @@ final class SymbolVisitor implements SymbolProvider, ShapeVisitor<Symbol> {
             return createMemberSymbolWithEnumTarget(targetSymbol);
         }
 
+        if (shape.hasTrait(EventStreamTrait.class)) {
+            return createMemberSymbolWithEventStream(targetSymbol);
+        }
+
         return targetSymbol;
     }
 
@@ -312,6 +317,14 @@ final class SymbolVisitor implements SymbolProvider, ShapeVisitor<Symbol> {
         return targetSymbol.toBuilder()
                 .namespace(null, "/")
                 .name(targetSymbol.getName() + " | string")
+                .addReference(targetSymbol)
+                .build();
+    }
+
+    private Symbol createMemberSymbolWithEventStream(Symbol targetSymbol) {
+        return targetSymbol.toBuilder()
+                .namespace(null, "/")
+                .name(String.format("AsyncIterable<%s>", targetSymbol.getName()))
                 .addReference(targetSymbol)
                 .build();
     }

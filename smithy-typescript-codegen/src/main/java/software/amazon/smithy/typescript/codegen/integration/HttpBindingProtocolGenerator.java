@@ -17,6 +17,8 @@ package software.amazon.smithy.typescript.codegen.integration;
 
 import static software.amazon.smithy.model.knowledge.HttpBinding.Location;
 
+//import java.util.ArrayList;
+
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -27,6 +29,8 @@ import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.codegen.core.Symbol;
 import software.amazon.smithy.codegen.core.SymbolProvider;
 import software.amazon.smithy.codegen.core.SymbolReference;
+//import software.amazon.smithy.model.Model;
+//import software.amazon.smithy.model.knowledge.EventStreamIndex;
 import software.amazon.smithy.model.knowledge.HttpBinding;
 import software.amazon.smithy.model.knowledge.HttpBindingIndex;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
@@ -169,7 +173,6 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
 
         // Ensure that the request type is imported.
         writer.addUseImports(requestType);
-        writer.addImport("SerdeContext", "SerdeContext", "@aws-sdk/types");
         writer.addImport("Endpoint", "__Endpoint", "@aws-sdk/types");
         // e.g., serializeAws_restJson1_1ExecuteStatement
         String methodName = ProtocolGenerator.getSerFunctionName(symbol, getName());
@@ -178,8 +181,9 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
 
         writer.openBlock("export async function $L(\n"
                        + "  input: $T,\n"
-                       + "  context: SerdeContext\n"
-                       + "): Promise<$T> {", "}", methodName, inputType, requestType, () -> {
+                       + "  context: $T\n"
+                       + "): Promise<$T> {", "}", methodName, inputType, "SerdeContext"
+               /* getOperationSerdeContext(context, operation, SerdeType.SERIALIZER)*/, requestType, () -> {
             List<HttpBinding> labelBindings = writeRequestLabels(context, operation, bindingIndex, trait);
             List<HttpBinding> queryBindings = writeRequestQueryString(context, operation, bindingIndex);
             writeHeaders(context, operation, bindingIndex);
@@ -500,7 +504,6 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
 
         // Ensure that the response type is imported.
         writer.addUseImports(responseType);
-        writer.addImport("SerdeContext", "SerdeContext", "@aws-sdk/types");
         // e.g., deserializeAws_restJson1_1ExecuteStatement
         String methodName = ProtocolGenerator.getDeserFunctionName(symbol, getName());
         String errorMethodName = methodName + "Error";
@@ -510,8 +513,13 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
         // Handle the general response.
         writer.openBlock("export async function $L(\n"
                        + "  output: $T,\n"
-                       + "  context: SerdeContext\n"
-                       + "): Promise<$T> {", "}", methodName, responseType, outputType, () -> {
+                       + "  context: $T\n"
+                       + "): Promise<$T> {", "}",
+                methodName,
+                responseType,
+                /*getOperationSerdeContext(context, operation, SerdeType.DESERIALIZER),*/
+                "SerdeContext",
+                outputType, () -> {
             // Redirect error deserialization to the dispatcher
             writer.openBlock("if (output.statusCode !== $L) {", "}", trait.getCode(), () -> {
                 writer.write("return $L(output, context);", errorMethodName);
@@ -583,6 +591,29 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
         });
 
         writer.write("");
+    }
+
+
+    private enum SerdeType { SERIALIZER, DESERIALIZER }
+
+    private String getOperationSerdeContext(GenerationContext context, OperationShape operation, SerdeType serdeType) {
+        TypeScriptWriter writer = context.getWriter();
+        // add default SerdeContext
+        writer.addImport("SerdeContext", "SerdeContext", "@aws-sdk/types");
+//        List<String> contextInterfaceList = new ArrayList<>();
+//        contextInterfaceList.add("SerdeContext");
+//        //check if event stream trait exists
+//        Model model = context.getModel();
+//        EventStreamIndex eventStreamIndex = model.getKnowledge(EventStreamIndex.class);
+//        if (
+//                serdeType == SerdeType.SERIALIZER && eventStreamIndex.getInputInfo(operation).isPresent()
+//                       || serdeType == SerdeType.DESERIALIZER && eventStreamIndex.getOutputInfo(operation).isPresent()
+//        ) {
+//            writer.addImport("EventStreamSerdeContext", "EventStreamSerdeContext", "@aws-sdk/types");
+//            contextInterfaceList.add("EventStreamSerdeContext");
+//        }
+//        return String.join(" & ", contextInterfaceList);
+        return "SerdeContext";
     }
 
     private void readHeaders(

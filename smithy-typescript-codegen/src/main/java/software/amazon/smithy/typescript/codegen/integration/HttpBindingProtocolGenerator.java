@@ -17,8 +17,6 @@ package software.amazon.smithy.typescript.codegen.integration;
 
 import static software.amazon.smithy.model.knowledge.HttpBinding.Location;
 
-//import java.util.ArrayList;
-
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -29,8 +27,6 @@ import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.codegen.core.Symbol;
 import software.amazon.smithy.codegen.core.SymbolProvider;
 import software.amazon.smithy.codegen.core.SymbolReference;
-//import software.amazon.smithy.model.Model;
-//import software.amazon.smithy.model.knowledge.EventStreamIndex;
 import software.amazon.smithy.model.knowledge.HttpBinding;
 import software.amazon.smithy.model.knowledge.HttpBindingIndex;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
@@ -50,6 +46,7 @@ import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.shapes.TimestampShape;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.traits.ErrorTrait;
+import software.amazon.smithy.model.traits.EventStreamTrait;
 import software.amazon.smithy.model.traits.HttpTrait;
 import software.amazon.smithy.model.traits.TimestampFormatTrait.Format;
 import software.amazon.smithy.typescript.codegen.ApplicationProtocol;
@@ -181,9 +178,15 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
 
         writer.openBlock("export async function $L(\n"
                        + "  input: $T,\n"
-                       + "  context: $T\n"
-                       + "): Promise<$T> {", "}", methodName, inputType, "SerdeContext"
-               /* getOperationSerdeContext(context, operation, SerdeType.SERIALIZER)*/, requestType, () -> {
+                       + "  context: $L\n"
+                       + "): Promise<$T> {", "}",
+                methodName,
+                inputType,
+                HttpProtocolGeneratorUtils.getOperationSerdeContext(
+                        context,
+                        operation,
+                        HttpProtocolGeneratorUtils.SerdeType.SERIALIZER
+                ), requestType, () -> {
             List<HttpBinding> labelBindings = writeRequestLabels(context, operation, bindingIndex, trait);
             List<HttpBinding> queryBindings = writeRequestQueryString(context, operation, bindingIndex);
             writeHeaders(context, operation, bindingIndex);
@@ -367,7 +370,9 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
             MemberShape member,
             Shape target
     ) {
-        if (isNativeSimpleType(target)) {
+        if (member.getTrait(EventStreamTrait.class).isPresent()) {
+
+        } if (isNativeSimpleType(target)) {
             return dataSource + ".toString()";
         } else if (target instanceof TimestampShape) {
             HttpBindingIndex httpIndex = context.getModel().getKnowledge(HttpBindingIndex.class);
@@ -513,12 +518,15 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
         // Handle the general response.
         writer.openBlock("export async function $L(\n"
                        + "  output: $T,\n"
-                       + "  context: $T\n"
+                       + "  context: $L\n"
                        + "): Promise<$T> {", "}",
                 methodName,
                 responseType,
-                /*getOperationSerdeContext(context, operation, SerdeType.DESERIALIZER),*/
-                "SerdeContext",
+                HttpProtocolGeneratorUtils.getOperationSerdeContext(
+                        context,
+                        operation,
+                        HttpProtocolGeneratorUtils.SerdeType.DESERIALIZER
+                ),
                 outputType, () -> {
             // Redirect error deserialization to the dispatcher
             writer.openBlock("if (output.statusCode !== $L) {", "}", trait.getCode(), () -> {
@@ -591,29 +599,6 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
         });
 
         writer.write("");
-    }
-
-
-    private enum SerdeType { SERIALIZER, DESERIALIZER }
-
-    private String getOperationSerdeContext(GenerationContext context, OperationShape operation, SerdeType serdeType) {
-        TypeScriptWriter writer = context.getWriter();
-        // add default SerdeContext
-        writer.addImport("SerdeContext", "SerdeContext", "@aws-sdk/types");
-//        List<String> contextInterfaceList = new ArrayList<>();
-//        contextInterfaceList.add("SerdeContext");
-//        //check if event stream trait exists
-//        Model model = context.getModel();
-//        EventStreamIndex eventStreamIndex = model.getKnowledge(EventStreamIndex.class);
-//        if (
-//                serdeType == SerdeType.SERIALIZER && eventStreamIndex.getInputInfo(operation).isPresent()
-//                       || serdeType == SerdeType.DESERIALIZER && eventStreamIndex.getOutputInfo(operation).isPresent()
-//        ) {
-//            writer.addImport("EventStreamSerdeContext", "EventStreamSerdeContext", "@aws-sdk/types");
-//            contextInterfaceList.add("EventStreamSerdeContext");
-//        }
-//        return String.join(" & ", contextInterfaceList);
-        return "SerdeContext";
     }
 
     private void readHeaders(

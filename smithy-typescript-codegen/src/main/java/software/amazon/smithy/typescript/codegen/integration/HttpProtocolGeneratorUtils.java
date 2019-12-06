@@ -15,6 +15,8 @@
 
 package software.amazon.smithy.typescript.codegen.integration;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
@@ -22,6 +24,8 @@ import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.codegen.core.Symbol;
 import software.amazon.smithy.codegen.core.SymbolProvider;
 import software.amazon.smithy.codegen.core.SymbolReference;
+import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.knowledge.EventStreamIndex;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.StructureShape;
@@ -176,5 +180,27 @@ final class HttpProtocolGeneratorUtils {
         writer.write("");
 
         return errorShapes;
+    }
+
+    enum SerdeType { SERIALIZER, DESERIALIZER }
+
+    static String getOperationSerdeContext(GenerationContext context, OperationShape operation, SerdeType serdeType) {
+        TypeScriptWriter writer = context.getWriter();
+        // add default SerdeContext
+        writer.addImport("SerdeContext", "SerdeContext", "@aws-sdk/types");
+        List<String> contextInterfaceList = new ArrayList<>();
+        contextInterfaceList.add("SerdeContext");
+        //check if event stream trait exists
+        Model model = context.getModel();
+        if (
+                serdeType == SerdeType.SERIALIZER
+                        && EventStreamGenerator.operationHasEventStreamInput.apply(model, operation)
+                || serdeType == SerdeType.DESERIALIZER
+                        && EventStreamGenerator.operationHasEventStreamOutput.apply(model, operation)
+        ) {
+            writer.addImport("EventStreamSerdeContext", "EventStreamSerdeContext", "@aws-sdk/types");
+            contextInterfaceList.add("EventStreamSerdeContext");
+        }
+        return String.join(" & ", contextInterfaceList);
     }
 }

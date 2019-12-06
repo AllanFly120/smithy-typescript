@@ -36,16 +36,24 @@ import software.amazon.smithy.utils.ListUtils;
 /**
  * Adds event streams if needed.
  */
-public class AddEventStreams implements TypeScriptIntegration {
+public class EventStreamGenerator implements TypeScriptIntegration {
 
-    private BiFunction<EventStreamIndex, OperationShape, Boolean> operationHasEventStreamInput =
-            (eventStreamIndex, operationShape) ->
-                    eventStreamIndex.getInputInfo(operationShape).isPresent();
+    static BiFunction<Model, OperationShape, Boolean> operationHasEventStreamOutput =
+            (model, operationShape) -> {
+                EventStreamIndex eventStreamIndex = model.getKnowledge(EventStreamIndex.class);
+                return eventStreamIndex.getOutputInfo(operationShape).isPresent();
+            };
 
-    private BiFunction<EventStreamIndex, OperationShape, Boolean> operationHasEventStream =
-            (eventStreamIndex, operationShape) ->
-                    eventStreamIndex.getOutputInfo(operationShape).isPresent()
-                            || eventStreamIndex.getInputInfo(operationShape).isPresent();
+    static BiFunction<Model, OperationShape, Boolean> operationHasEventStreamInput =
+            (model, operationShape) -> {
+                EventStreamIndex eventStreamIndex = model.getKnowledge(EventStreamIndex.class);
+                return eventStreamIndex.getInputInfo(operationShape).isPresent();
+            };
+
+    static BiFunction<Model, OperationShape, Boolean> operationHasEventStream =
+            (model, operationShape) ->
+                    operationHasEventStreamInput.apply(model, operationShape)
+                            || operationHasEventStreamOutput.apply(model, operationShape);
 
     @Override
     public List<RuntimeClientPlugin> getClientPlugins() {
@@ -124,13 +132,12 @@ public class AddEventStreams implements TypeScriptIntegration {
     private static boolean hasEventStream(
             Model model,
             ServiceShape service,
-            BiFunction<EventStreamIndex, OperationShape, Boolean> predicate
+            BiFunction<Model, OperationShape, Boolean> predicate
     ) {
         TopDownIndex topDownIndex = model.getKnowledge(TopDownIndex.class);
         Set<OperationShape> operations = topDownIndex.getContainedOperations(service);
-        EventStreamIndex eventStreamIndex = model.getKnowledge(EventStreamIndex.class);
         for (OperationShape operation : operations) {
-            if (predicate.apply(eventStreamIndex, operation)) {
+            if (predicate.apply(model, operation)) {
                 return true;
             }
         }

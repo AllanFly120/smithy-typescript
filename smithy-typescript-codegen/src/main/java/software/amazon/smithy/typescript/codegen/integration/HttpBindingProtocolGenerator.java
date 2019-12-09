@@ -340,8 +340,21 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
             writer.write("let body: any = {};");
             writer.openBlock("if (input.$L !== undefined) {", "}", memberName, () -> {
                 Shape target = context.getModel().getShapeIndex().getShape(binding.getMember().getTarget()).get();
-                writer.write("body = $L;", getInputValue(
-                        context, Location.PAYLOAD, "input." + memberName, binding.getMember(), target));
+                MemberShape member = binding.getMember();
+                String dataSource = "input." + memberName;
+                String inputValue;
+                if (member.getTrait(EventStreamTrait.class).isPresent()) {
+                    inputValue = String.format(
+                            "context.eventStreamMarshaller.serialize(%n"
+                                    + "  %s,%n"
+                                    + "  event => %s%n"
+                                    + ")", dataSource,
+                            getNamedMembersInputParam(context, Location.PAYLOAD, "event", target));
+
+                } else {
+                    inputValue = getInputValue(context, Location.PAYLOAD, dataSource, member, target);
+                }
+                writer.write("body = $L;", inputValue);
             });
             return payloadBindings;
         }
@@ -370,9 +383,7 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
             MemberShape member,
             Shape target
     ) {
-        if (member.getTrait(EventStreamTrait.class).isPresent()) {
-
-        } if (isNativeSimpleType(target)) {
+        if (isNativeSimpleType(target)) {
             return dataSource + ".toString()";
         } else if (target instanceof TimestampShape) {
             HttpBindingIndex httpIndex = context.getModel().getKnowledge(HttpBindingIndex.class);
@@ -666,11 +677,41 @@ public abstract class HttpBindingProtocolGenerator implements ProtocolGenerator 
             // There can only be one payload binding.
             HttpBinding binding = payloadBindings.get(0);
             Shape target = context.getModel().getShapeIndex().getShape(binding.getMember().getTarget()).get();
-            writer.write("contents.$L = $L;", binding.getMemberName(), getOutputValue(context,
-                    Location.PAYLOAD, "data", binding.getMember(), target));
+            if (binding.getMember().hasTrait(EventStreamTrait.class)) {
+                writer.write("contents.$L =", binding.getMemberName());
+                eventStreamDeserializerWrapper(context, binding.getMember(), target);
+            } else {
+                writer.write("contents.$L = $L;", binding.getMemberName(), getOutputValue(context,
+                        Location.PAYLOAD, "data", binding.getMember(), target));
+            }
             return payloadBindings;
         }
         return ListUtils.of();
+    }
+
+    private void eventStreamDeserializerWrapper(GenerationContext context, MemberShape member, Shape target) {
+        TypeScriptWriter writer = context.getWriter();
+        writer.openBlock("context.eventStreamMarshaller.deserialize(", ");", () -> {
+            writer.write("output.body,");
+            writer.openBlock("async event => {", "}", () -> {
+                writer.write("const eventName = Object.keys(event)[0];");
+                writer.write("const eventValue = event[eventName];");
+                writer.openBlock("const parsedEvent = {", "};", () -> {
+                    writer.openBlock("[eventName]: {", "}", () -> {
+                        writer.openBlock("headers: Object.entries(eventValue.headers).reduce(", "),", () -> {
+                             writer.write(
+                            "(accummulator, curr) => {accummulator[curr[0]] = curr[1].value; return accummulator; },"
+                             );
+                             writer.write("{} as {[key: string]: any}");
+                        });
+                        writer.write("body: await parseBody(event[eventName].body, context)");
+                    });
+                });
+                writer.write("return $L;",
+                        getOutputValue(context, Location.PAYLOAD, "parsedEvent", member, target));
+            });
+        });
+
     }
 
     /**
